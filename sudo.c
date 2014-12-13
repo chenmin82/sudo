@@ -39,15 +39,24 @@ void sudo_print(sudo *s) {
   char val;
 
   printf("------------------\n");
-  for (i = 0; i < SUDO_SIZE; i++)
+  for (i = 0; i < SUDO_SIZE; i++) {
     for (j = 0; j < SUDO_SIZE; j++) {
       val = 'x';
       if (s->n_candidates[i][j] == 1) {
         for (n = 1; n<= SUDO_SIZE && !IS_BIT_SET(s->array[i][j], n); n++);
-        val = '0' + n; 
+        val = '0' + n;
       }
-      printf("%c%c", val, ((j == SUDO_SIZE-1) ? '\n' : ' '));
-    }  
+      printf("%c%s", val, ((j == SUDO_SIZE-1) ? "    " : " "));
+    }
+
+    for (j = 0; j < SUDO_SIZE; j++) {
+      printf("%d%s", s->n_candidates[i][j], ((j == SUDO_SIZE-1) ? "    " : " "));
+    }
+
+    for (j = 0; j < SUDO_SIZE; j++) {
+      printf("%03x%c", s->array[i][j], ((j == SUDO_SIZE-1) ? '\n' : ' '));
+    }
+  }
   printf("------------------\n");
 }
 
@@ -61,33 +70,43 @@ void sudo_free(sudo *s) {
   if (s) free(s);
 }
 
-void sudo_clear_col(sudo *s, int i, int j, int value) {
+// return: bit map of new candidate in col that the value is determined.
+int sudo_clear_col(sudo *s, int i, int j, int value) {
   int ii;
   int *p = &s->array[0][j];
+  int new_cand=0;
   for (ii = 0; ii < SUDO_SIZE; ii++) {
     if (ii != i && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
       s->n_candidates[ii][j]--;
+      if (s->n_candidates[ii][j] == 1)
+        SET_BIT_PTR(&new_cand, ii+1);
     }
     p += SUDO_SIZE;
   }
+  return(new_cand);
 }
 
-void sudo_clear_row(sudo *s, int i, int j, int value) {
+int sudo_clear_row(sudo *s, int i, int j, int value) {
   int jj;
   int *p = &s->array[i][0];
+  int new_cand = 0;
   for (jj = 0; jj < SUDO_SIZE; jj++) {
     if (jj != j && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
       s->n_candidates[i][jj]--;
+      if (s->n_candidates[i][jj] == 1)
+        SET_BIT_PTR(&new_cand, jj+1);
     }
     p++;
   }
+  return(new_cand);
 }
 
-void sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
+int sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
   int sub_i, sub_j, ii, jj;
   int *p;
+  int new_cand = 0;
   sub_i = (i / 3) * 3;
   sub_j = (j / 3) * 3;
   p = &s->array[sub_i][sub_j];
@@ -96,30 +115,67 @@ void sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
       if (ii != i && jj != j && IS_BIT_SET_PTR(p, value)) {
         CLEAR_BIT_PTR(p, value);
         s->n_candidates[ii][jj]--;
+        if (s->n_candidates[ii][jj] == 1)
+          SET_BIT_PTR(&new_cand, (ii-sub_i)*3+(jj-sub_j));
       }
       p++;
     }
     p += SUDO_SIZE - 3;
   }
+  return(new_cand);
 }
 
 int sudo_set_value(sudo *s, int i, int j, int value) {
   int *p = &s->array[i][j];
+  int new_cand_in_row, new_cand_in_col, new_cand_in_sub_3x3;
+  int n, val;
   *p = 0;
   SET_BIT_PTR(p, value);
   s->n_candidates[i][j]=1;
 
   printf("sudo after adding %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
-  sudo_clear_row(s, i, j, value);
-  printf("sudo after clearing row: %d at (%d, %d)\n", value, i, j);
+  new_cand_in_row = sudo_clear_row(s, i, j, value);
+//  printf("sudo after clearing row: %d at (%d, %d)\n", value, i, j);
+//  sudo_print(s);
+  new_cand_in_col = sudo_clear_col(s, i, j, value);
+//  printf("sudo after clearing col %d at (%d, %d)\n", value, i, j);
+//  sudo_print(s);
+  new_cand_in_sub_3x3 = sudo_clear_sub_3x3(s, i, j, value);
+  printf("sudo after clearing row/col/sub3x3: %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
-  sudo_clear_col(s, i, j, value);
-  printf("sudo after clearing col %d at (%d, %d)\n", value, i, j);
-  sudo_print(s);
-  sudo_clear_sub_3x3(s, i, j, value);
-  printf("sudo after clearing sub 3x3: %d at (%d, %d)\n", value, i, j);
-  sudo_print(s);
+
+  if (new_cand_in_row > 0) {
+    for (n = 1; n <= SUDO_SIZE; n++) {
+      if (IS_BIT_SET(new_cand_in_row, n)) {
+        for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[i][n-1], val); val++);
+        sudo_set_value(s, i, n-1, val);
+      }
+    }
+  }
+
+  if (new_cand_in_col > 0) {
+    for (n = 1; n <= SUDO_SIZE; n++) {
+      if (IS_BIT_SET(new_cand_in_row, n)) {
+        for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[n-1][j], val); val++);
+        sudo_set_value(s, n-1, j, val);
+      }
+    }
+  }
+
+  if (new_cand_in_sub_3x3) {
+    int sub_i, sub_j, ii, jj;
+    sub_i = (i / 3) * 3;
+    sub_j = (j / 3) * 3;
+    for (n = 1; n <= SUDO_SIZE; n++) {
+      if (IS_BIT_SET(new_cand_in_sub_3x3, n)) {
+        ii = (n-1) / 3;
+        jj = (n-1) - 3 * ii;
+        for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[sub_i+ii][sub_j+jj], val); val++);
+        sudo_set_value(s, sub_i+ii, sub_j+jj, val);
+      }
+    }
+  }
 }
 
 int sudo_init_from_file(sudo *s, FILE *fp) {
@@ -145,12 +201,12 @@ int sudo_init_from_file(sudo *s, FILE *fp) {
 int main(int argc, char **argv) {
   FILE *fp;
   sudo *s;
-  
+
   if (argc != 2) {
     printf("Usage: %s sudo_file\n",  argv[0]);
     return(1);
   }
-  
+
   fp = fopen(argv[1], "r");
   if (!fp) {
     printf("File %s cannot be opened.\n", argv[1]);

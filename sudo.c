@@ -38,7 +38,6 @@ void sudo_print(sudo *s) {
   int i, j, n;
   char val;
 
-  printf("The sudo created is:\n");
   printf("------------------\n");
   for (i = 0; i < SUDO_SIZE; i++)
     for (j = 0; j < SUDO_SIZE; j++) {
@@ -63,26 +62,44 @@ void sudo_free(sudo *s) {
 }
 
 void sudo_clear_col(sudo *s, int i, int j, int value) {
-  int *p = &s->array[i][j];
-  if (!IS_BIT_SET_PTR(p, value)) {
-    //CLEAR_BIT_PTR(p, value);
-    //s->n_candidates[i][j]--;
+  int ii;
+  int *p = &s->array[0][j];
+  for (ii = 0; ii < SUDO_SIZE; ii++) {
+    if (ii != i && IS_BIT_SET_PTR(p, value)) {
+      CLEAR_BIT_PTR(p, value);
+      s->n_candidates[ii][j]--;
+    }
+    p += SUDO_SIZE;
   }
 }
 
 void sudo_clear_row(sudo *s, int i, int j, int value) {
-  int *p = &s->array[i][j];
-  if (!IS_BIT_SET_PTR(p, value)) {
-    //CLEAR_BIT_PTR(p, value);
-    //s->n_candidates[i][j]--;
+  int jj;
+  int *p = &s->array[i][0];
+  for (jj = 0; jj < SUDO_SIZE; jj++) {
+    if (jj != j && IS_BIT_SET_PTR(p, value)) {
+      CLEAR_BIT_PTR(p, value);
+      s->n_candidates[i][jj]--;
+    }
+    p++;
   }
 }
 
 void sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
-  int *p = &s->array[i][j];
-  if (!IS_BIT_SET_PTR(p, value)) {
-    //CLEAR_BIT_PTR(p, value);
-    //s->n_candidates[i][j]--;
+  int sub_i, sub_j, ii, jj;
+  int *p;
+  sub_i = (i / 3) * 3;
+  sub_j = (j / 3) * 3;
+  p = &s->array[sub_i][sub_j];
+  for (ii = sub_i; ii < sub_i + 3; ii++) {
+    for (jj = sub_j; jj < sub_j + 3; jj++) {
+      if (ii != i && jj != j && IS_BIT_SET_PTR(p, value)) {
+        CLEAR_BIT_PTR(p, value);
+        s->n_candidates[ii][jj]--;
+      }
+      p++;
+    }
+    p += SUDO_SIZE - 3;
   }
 }
 
@@ -92,9 +109,17 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
   SET_BIT_PTR(p, value);
   s->n_candidates[i][j]=1;
 
+  printf("sudo after adding %d at (%d, %d)\n", value, i, j);
+  sudo_print(s);
   sudo_clear_row(s, i, j, value);
+  printf("sudo after clearing row: %d at (%d, %d)\n", value, i, j);
+  sudo_print(s);
   sudo_clear_col(s, i, j, value);
+  printf("sudo after clearing col %d at (%d, %d)\n", value, i, j);
+  sudo_print(s);
   sudo_clear_sub_3x3(s, i, j, value);
+  printf("sudo after clearing sub 3x3: %d at (%d, %d)\n", value, i, j);
+  sudo_print(s);
 }
 
 int sudo_init_from_file(sudo *s, FILE *fp) {

@@ -38,7 +38,7 @@ void sudo_print(sudo *s) {
   int i, j, n;
   char val;
 
-  printf("------------------\n");
+  printf("--- answer ------    -- n_candidates -    ----------- cand_bitmap -----------\n");
   for (i = 0; i < SUDO_SIZE; i++) {
     for (j = 0; j < SUDO_SIZE; j++) {
       val = 'x';
@@ -198,6 +198,89 @@ int sudo_init_from_file(sudo *s, FILE *fp) {
   return(0);
 }
 
+/*
+------------------
+6 x x x x x x 1 x    1 2 3 5 5 7 4 1 4    020 180 114 156 0ce 1de 1d0 001 01e
+4 x 7 x x x x x x    1 2 1 5 5 6 3 5 4    008 180 040 136 0a7 197 190 136 036
+1 2 x x x x x x x    1 1 3 5 5 6 4 6 4    001 002 114 174 0ec 1dc 1d0 17c 03c
+x 3 x x 5 x 4 8 7    2 1 2 2 1 2 1 1 1    102 004 102 022 010 003 008 080 040
+x 6 8 x x x 3 x x    4 1 1 2 4 4 1 3 3    152 020 080 042 04b 04b 004 112 013
+x x 1 x 9 x 6 x x    3 2 1 3 1 5 1 2 2    052 048 001 046 100 0ce 020 012 012
+3 x x 4 7 x 2 x 8    1 3 2 1 1 3 1 3 1    004 141 120 008 040 150 002 070 080
+x 5 x 1 x x 7 x x    4 1 4 1 3 4 1 4 3    1c2 010 12a 001 046 146 040 06c 02c
+x x x 8 x 6 1 x 9    2 2 2 1 3 1 1 4 1    042 048 00a 080 046 020 001 05c 100
+------------------
+For the example above, consider for element @ (6, 1), though it has 3 candidates (1, 7, 9) , notice in the sub 3x3 @ (6, 0), the value 1 can only be here.
+
+This function checks each candidate in each row/col/sub3x3 to see if there is a candidate that can locate only in one element. If so, set the the candidate value to that element.
+*/
+int sudo_check_unique_cand(sudo *s) {
+  int i, j, n, val;
+  int cand_count, cand_i, cand_j;
+  int sub_i, sub_j, sub3x3;
+
+  // check each row
+  for (i = 0; i < SUDO_SIZE; i++) {
+    for (n = 1; n <= SUDO_SIZE; n++) {
+      cand_count=0;
+      for (j = 0; j < SUDO_SIZE; j++) {
+        if (IS_BIT_SET(s->array[i][j], n)) {
+          cand_count++;
+          cand_j = j;
+        }
+        if (cand_count > 1) break;
+      }
+      if (cand_count == 1 && s->n_candidates[i][cand_j] > 1) sudo_set_value(s, i, cand_j, n);
+    }
+  }
+
+  // check each col
+  for (j = 0; j < SUDO_SIZE; j++) {
+    for (n = 1; n <= SUDO_SIZE; n++) {
+      cand_count=0;
+      for (i = 0; i < SUDO_SIZE; i++) {
+        if (IS_BIT_SET(s->array[i][j], n)) {
+          cand_count++;
+          cand_i = i;
+        }
+        if (cand_count > 1) break;
+      }
+      if (cand_count == 1 && s->n_candidates[cand_i][j] > 1) sudo_set_value(s, cand_i, j, n);
+    }
+  }
+
+  // check each sub3x3
+  for (sub3x3 = 0; sub3x3 < 9; sub3x3++) {
+    sub_i = sub3x3 / 3;
+    sub_j = sub3x3 - sub_i * 3;
+    sub_i *= 3;
+    sub_j *= 3;
+    for (n = 1; n <= SUDO_SIZE; n++) {
+      cand_count=0;
+      for (i = sub_i; i < sub_i + 3; i++) {
+        if (IS_BIT_SET(s->array[i][sub_j+0], n)) {
+          cand_count++;
+          cand_i = i;
+          cand_j = sub_j;
+        }
+        if (IS_BIT_SET(s->array[i][sub_j+1], n)) {
+          cand_count++;
+          cand_i = i;
+          cand_j = sub_j + 1;
+        }
+        if (IS_BIT_SET(s->array[i][sub_j+2], n)) {
+          cand_count++;
+          cand_i = i;
+          cand_j = sub_j + 2;
+        }
+        if (cand_count > 1) break;
+      }
+      // After all 9 elements have been scanned to given value n.
+      if (cand_count == 1 && s->n_candidates[cand_i][cand_j] > 1) sudo_set_value(s, cand_i, cand_j, n);
+    }
+  }
+}
+
 int main(int argc, char **argv) {
   FILE *fp;
   sudo *s;
@@ -220,6 +303,11 @@ int main(int argc, char **argv) {
   }
 
   sudo_print(s);
+
+  sudo_check_unique_cand(s);
+  sudo_check_unique_cand(s);
+  sudo_check_unique_cand(s);
+//  sudo_check_unique_cand(s);
 
   sudo_free(s);
 }

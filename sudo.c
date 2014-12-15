@@ -116,7 +116,7 @@ int sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
         CLEAR_BIT_PTR(p, value);
         s->n_candidates[ii][jj]--;
         if (s->n_candidates[ii][jj] == 1)
-          SET_BIT_PTR(&new_cand, (ii-sub_i)*3+(jj-sub_j));
+          SET_BIT_PTR(&new_cand, (ii-sub_i)*3+(jj-sub_j)+1);
       }
       p++;
     }

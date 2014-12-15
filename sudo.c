@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #define SUDO_SIZE 9
 #define ALL_CANDIDATES ((1<<(SUDO_SIZE))-1)
@@ -8,6 +9,7 @@
 typedef struct {
   int array[SUDO_SIZE][SUDO_SIZE];
   int n_candidates[SUDO_SIZE][SUDO_SIZE];
+  int unknown;	/* undertermined elments */
 } sudo;
 
 typedef struct sudo_snapshot {
@@ -32,16 +34,17 @@ void sudo_init(sudo *s) {
       s->array[i][j] = ALL_CANDIDATES;
       s->n_candidates[i][j] = SUDO_SIZE;
     }
+  s->unknown = SUDO_SIZE * SUDO_SIZE;
 }
 
 void sudo_print(sudo *s) {
   int i, j, n;
   char val;
 
-  printf("--- answer ------    -- n_candidates -    ----------- cand_bitmap -----------\n");
+  printf("=== answer ======    == n_candidates =    =========== cand_bitmap ===========\n");
   for (i = 0; i < SUDO_SIZE; i++) {
     for (j = 0; j < SUDO_SIZE; j++) {
-      val = 'x';
+      val = '-';
       if (s->n_candidates[i][j] == 1) {
         for (n = 1; n<= SUDO_SIZE && !IS_BIT_SET(s->array[i][j], n); n++);
         val = '0' + n;
@@ -57,7 +60,7 @@ void sudo_print(sudo *s) {
       printf("%03x%c", s->array[i][j], ((j == SUDO_SIZE-1) ? '\n' : ' '));
     }
   }
-  printf("------------------\n");
+  printf("=================\n");
 }
 
 sudo *sudo_create() {
@@ -78,9 +81,9 @@ int sudo_clear_col(sudo *s, int i, int j, int value) {
   for (ii = 0; ii < SUDO_SIZE; ii++) {
     if (ii != i && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
-      s->n_candidates[ii][j]--;
-      if (s->n_candidates[ii][j] == 1)
+      if (s->n_candidates[ii][j] == 2)
         SET_BIT_PTR(&new_cand, ii+1);
+      else s->n_candidates[ii][j]--;
     }
     p += SUDO_SIZE;
   }
@@ -94,9 +97,9 @@ int sudo_clear_row(sudo *s, int i, int j, int value) {
   for (jj = 0; jj < SUDO_SIZE; jj++) {
     if (jj != j && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
-      s->n_candidates[i][jj]--;
-      if (s->n_candidates[i][jj] == 1)
+      if (s->n_candidates[i][jj] == 2)
         SET_BIT_PTR(&new_cand, jj+1);
+      else s->n_candidates[i][jj]--;
     }
     p++;
   }
@@ -114,9 +117,9 @@ int sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
     for (jj = sub_j; jj < sub_j + 3; jj++) {
       if (ii != i && jj != j && IS_BIT_SET_PTR(p, value)) {
         CLEAR_BIT_PTR(p, value);
-        s->n_candidates[ii][jj]--;
-        if (s->n_candidates[ii][jj] == 1)
+        if (s->n_candidates[ii][jj] == 2)
           SET_BIT_PTR(&new_cand, (ii-sub_i)*3+(jj-sub_j)+1);
+	else s->n_candidates[ii][jj]--;
       }
       p++;
     }
@@ -130,10 +133,14 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
   int new_cand_in_row, new_cand_in_col, new_cand_in_sub_3x3;
   int n, val;
   *p = 0;
+
+  assert(s->n_candidates[i][j] > 1);
+
   SET_BIT_PTR(p, value);
+  if (s->n_candidates[i][j] != 1) s->unknown--;
   s->n_candidates[i][j]=1;
 
-  printf("Adding %d @ (%d, %d)\n", value, i, j);
+  printf("Adding %d @ (%d, %d), %d left.\n", value, i, j, s->unknown);
   printf("sudo after adding %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
   new_cand_in_row = sudo_clear_row(s, i, j, value);
@@ -190,7 +197,7 @@ int sudo_init_from_file(sudo *s, FILE *fp) {
     while (*p && *p != '\n') {
       if (*(p+1) != ' ' && *(p+1) != '\n') return 1;
       else if (*p >= '1' && *p <= '9') sudo_set_value(s, i, j, *p-'0');
-      else if (*p != 'x' && *p != 'X') return 2;
+      else if (*p != 'x' && *p != 'X' && *p != '-') return 2;
       j++;
       p += 2;
     }
@@ -305,10 +312,9 @@ int main(int argc, char **argv) {
 
   sudo_print(s);
 
-  sudo_check_unique_cand(s);
-  sudo_check_unique_cand(s);
-  sudo_check_unique_cand(s);
-//  sudo_check_unique_cand(s);
+  while (s->unknown) {
+    sudo_check_unique_cand(s);
+  }
 
   sudo_free(s);
 }

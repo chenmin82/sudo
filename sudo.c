@@ -134,7 +134,7 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
   int n, val;
   *p = 0;
 
-  assert(s->n_candidates[i][j] > 1);
+  assert(s->n_candidates[i][j]);
 
   SET_BIT_PTR(p, value);
   if (s->n_candidates[i][j] != 1) s->unknown--;

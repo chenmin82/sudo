@@ -133,6 +133,7 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
   SET_BIT_PTR(p, value);
   s->n_candidates[i][j]=1;
 
+  printf("Adding %d @ (%d, %d)\n", value, i, j);
   printf("sudo after adding %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
   new_cand_in_row = sudo_clear_row(s, i, j, value);
@@ -156,7 +157,7 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
 
   if (new_cand_in_col > 0) {
     for (n = 1; n <= SUDO_SIZE; n++) {
-      if (IS_BIT_SET(new_cand_in_row, n)) {
+      if (IS_BIT_SET(new_cand_in_col, n)) {
         for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[n-1][j], val); val++);
         sudo_set_value(s, n-1, j, val);
       }

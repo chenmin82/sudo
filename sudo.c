@@ -5,6 +5,8 @@
 
 #define SUDO_SIZE 9
 #define ALL_CANDIDATES ((1<<(SUDO_SIZE))-1)
+#define SUDO_OK   0
+#define SUDO_ERR  1
 
 typedef struct {
   int array[SUDO_SIZE][SUDO_SIZE];
@@ -74,42 +76,49 @@ void sudo_free(sudo *s) {
 }
 
 // return: bit map of new candidate in col that the value is determined.
-int sudo_clear_col(sudo *s, int i, int j, int value) {
+int sudo_clear_col(sudo *s, int i, int j, int value, int *cand) {
   int ii;
   int *p = &s->array[0][j];
   int new_cand=0;
+  int error = SUDO_OK;
   for (ii = 0; ii < SUDO_SIZE; ii++) {
     if (ii != i && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
       if (s->n_candidates[ii][j] == 2)
         SET_BIT_PTR(&new_cand, ii+1);
       else s->n_candidates[ii][j]--;
+      if (s->n_candidates[ii][j] == 0) error = SUDO_ERR;
     }
     p += SUDO_SIZE;
   }
-  return(new_cand);
+  *cand = new_cand;
+  return (error);
 }
 
-int sudo_clear_row(sudo *s, int i, int j, int value) {
+int sudo_clear_row(sudo *s, int i, int j, int value, int *cand) {
   int jj;
   int *p = &s->array[i][0];
   int new_cand = 0;
+  int error = SUDO_OK;
   for (jj = 0; jj < SUDO_SIZE; jj++) {
     if (jj != j && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
       if (s->n_candidates[i][jj] == 2)
         SET_BIT_PTR(&new_cand, jj+1);
       else s->n_candidates[i][jj]--;
+      if (s->n_candidates[i][jj] == 0) error = SUDO_ERR;
     }
     p++;
   }
-  return(new_cand);
+  *cand = new_cand;
+  return (error);
 }
 
-int sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
+int sudo_clear_sub_3x3(sudo *s, int i, int j, int value, int *cand) {
   int sub_i, sub_j, ii, jj;
   int *p;
   int new_cand = 0;
+  int error = SUDO_OK;
   sub_i = (i / 3) * 3;
   sub_j = (j / 3) * 3;
   p = &s->array[sub_i][sub_j];
@@ -119,23 +128,31 @@ int sudo_clear_sub_3x3(sudo *s, int i, int j, int value) {
         CLEAR_BIT_PTR(p, value);
         if (s->n_candidates[ii][jj] == 2)
           SET_BIT_PTR(&new_cand, (ii-sub_i)*3+(jj-sub_j)+1);
-	else s->n_candidates[ii][jj]--;
+        else s->n_candidates[ii][jj]--;
+        if (s->n_candidates[ii][jj] == 0) error = SUDO_ERR;
       }
       p++;
     }
     p += SUDO_SIZE - 3;
   }
-  return(new_cand);
+  *cand = new_cand;
+  return (error);
 }
 
+/* Return value:
+   0 - Error detected.
+   1 - Set successfully. */
 int sudo_set_value(sudo *s, int i, int j, int value) {
   int *p = &s->array[i][j];
   int new_cand_in_row, new_cand_in_col, new_cand_in_sub_3x3;
   int n, val;
+  int error = SUDO_OK;
+
+//  assert(s->n_candidates[i][j]);
+//  assert(IS_BIT_SET_PTR(p, value));
+  if (!IS_BIT_SET_PTR(p, value)) return SUDO_ERR;
+
   *p = 0;
-
-  assert(s->n_candidates[i][j]);
-
   SET_BIT_PTR(p, value);
   if (s->n_candidates[i][j] != 1) s->unknown--;
   s->n_candidates[i][j]=1;
@@ -143,13 +160,16 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
   printf("Adding %d @ (%d, %d), %d left.\n", value, i, j, s->unknown);
   printf("sudo after adding %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
-  new_cand_in_row = sudo_clear_row(s, i, j, value);
+  error = sudo_clear_row(s, i, j, value, &new_cand_in_row);
+  if (error != SUDO_OK) return error;
 //  printf("sudo after clearing row: %d at (%d, %d)\n", value, i, j);
 //  sudo_print(s);
-  new_cand_in_col = sudo_clear_col(s, i, j, value);
+  error = sudo_clear_col(s, i, j, value, &new_cand_in_col);
+  if (error != SUDO_OK) return error;
 //  printf("sudo after clearing col %d at (%d, %d)\n", value, i, j);
 //  sudo_print(s);
-  new_cand_in_sub_3x3 = sudo_clear_sub_3x3(s, i, j, value);
+  error = sudo_clear_sub_3x3(s, i, j, value, &new_cand_in_sub_3x3);
+  if (error != SUDO_OK) return error;
   printf("sudo after clearing row/col/sub3x3: %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
 
@@ -157,7 +177,7 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
     for (n = 1; n <= SUDO_SIZE; n++) {
       if (IS_BIT_SET(new_cand_in_row, n)) {
         for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[i][n-1], val); val++);
-        sudo_set_value(s, i, n-1, val);
+        if (sudo_set_value(s, i, n-1, val) != SUDO_OK) return SUDO_ERR;
       }
     }
   }
@@ -166,7 +186,7 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
     for (n = 1; n <= SUDO_SIZE; n++) {
       if (IS_BIT_SET(new_cand_in_col, n)) {
         for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[n-1][j], val); val++);
-        sudo_set_value(s, n-1, j, val);
+        if (sudo_set_value(s, n-1, j, val) != SUDO_OK) return SUDO_ERR;
       }
     }
   }
@@ -180,10 +200,12 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
         ii = (n-1) / 3;
         jj = (n-1) - 3 * ii;
         for (val = 1; val<= SUDO_SIZE && !IS_BIT_SET(s->array[sub_i+ii][sub_j+jj], val); val++);
-        sudo_set_value(s, sub_i+ii, sub_j+jj, val);
+        if (sudo_set_value(s, sub_i+ii, sub_j+jj, val) != SUDO_OK) return SUDO_ERR;
       }
     }
   }
+
+  return SUDO_OK;
 }
 
 int sudo_init_from_file(sudo *s, FILE *fp) {
@@ -221,6 +243,8 @@ x x x 8 x 6 1 x 9    2 2 2 1 3 1 1 4 1    042 048 00a 080 046 020 001 05c 100
 For the example above, consider for element @ (6, 1), though it has 3 candidates (1, 7, 9) , notice in the sub 3x3 @ (6, 0), the value 1 can only be here.
 
 This function checks each candidate in each row/col/sub3x3 to see if there is a candidate that can locate only in one element. If so, set the the candidate value to that element.
+
+Return value: SUDO_OK/SUDO_ERR
 */
 int sudo_check_unique_cand(sudo *s) {
   int i, j, n, val;
@@ -238,7 +262,9 @@ int sudo_check_unique_cand(sudo *s) {
         }
         if (cand_count > 1) break;
       }
-      if (cand_count == 1 && s->n_candidates[i][cand_j] > 1) sudo_set_value(s, i, cand_j, n);
+      if (cand_count == 1 && s->n_candidates[i][cand_j] > 1) {
+        if (SUDO_ERR == sudo_set_value(s, i, cand_j, n)) return SUDO_ERR;
+      }
     }
   }
 
@@ -253,7 +279,9 @@ int sudo_check_unique_cand(sudo *s) {
         }
         if (cand_count > 1) break;
       }
-      if (cand_count == 1 && s->n_candidates[cand_i][j] > 1) sudo_set_value(s, cand_i, j, n);
+      if (cand_count == 1 && s->n_candidates[cand_i][j] > 1) {
+        if (SUDO_ERR == sudo_set_value(s, cand_i, j, n)) return SUDO_ERR;
+      }
     }
   }
 
@@ -284,9 +312,12 @@ int sudo_check_unique_cand(sudo *s) {
         if (cand_count > 1) break;
       }
       // After all 9 elements have been scanned to given value n.
-      if (cand_count == 1 && s->n_candidates[cand_i][cand_j] > 1) sudo_set_value(s, cand_i, cand_j, n);
+      if (cand_count == 1 && s->n_candidates[cand_i][cand_j] > 1) {
+        if (SUDO_ERR == sudo_set_value(s, cand_i, cand_j, n)) return SUDO_ERR;
+      }
     }
   }
+  return SUDO_OK;
 }
 
 int main(int argc, char **argv) {
@@ -312,6 +343,7 @@ int main(int argc, char **argv) {
 
   sudo_print(s);
 
+  /* Getting here means speculation is needed now. */
   while (s->unknown) {
     sudo_check_unique_cand(s);
   }

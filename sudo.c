@@ -29,6 +29,8 @@ typedef struct sudo_snapshot {
 #define CLEAR_BIT_PTR(ptr, n) (*(ptr) = (*(ptr)) & (~(1 << ((n)-1))))
 #define SET_BIT_PTR(ptr, n)   (*(ptr) = (*(ptr)) | (1<<((n)-1)))
 
+int sudo_check_unique_cand(sudo *s, int i, int j);
+
 void sudo_init(sudo *s) {
   int i, j;
   for (i = 0; i < SUDO_SIZE; i++)
@@ -205,7 +207,7 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
     }
   }
 
-  return SUDO_OK;
+  return(sudo_check_unique_cand(s, i, j));
 }
 
 int sudo_init_from_file(sudo *s, FILE *fp) {
@@ -246,78 +248,69 @@ This function checks each candidate in each row/col/sub3x3 to see if there is a 
 
 Return value: SUDO_OK/SUDO_ERR
 */
-int sudo_check_unique_cand(sudo *s) {
-  int i, j, n, val;
+int sudo_check_unique_cand(sudo *s, int i, int j) {
+  int n, val, ii, jj;
   int cand_count, cand_i, cand_j;
   int sub_i, sub_j, sub3x3;
+  int error = SUDO_OK;
 
-  // check each row
-  for (i = 0; i < SUDO_SIZE; i++) {
-    for (n = 1; n <= SUDO_SIZE; n++) {
-      cand_count=0;
-      for (j = 0; j < SUDO_SIZE; j++) {
-        if (IS_BIT_SET(s->array[i][j], n)) {
-          cand_count++;
-          cand_j = j;
-        }
-        if (cand_count > 1) break;
+  // check row
+  for (n = 1; n <= SUDO_SIZE; n++) {
+    cand_count=0;
+    for (jj = 0; jj < SUDO_SIZE; jj++) {
+      if (IS_BIT_SET(s->array[i][jj], n)) {
+        cand_count++;
+        cand_j = jj;
       }
-      if (cand_count == 1 && s->n_candidates[i][cand_j] > 1) {
-        if (SUDO_ERR == sudo_set_value(s, i, cand_j, n)) return SUDO_ERR;
-      }
+      if (cand_count > 1) break;
     }
+    if (cand_count == 1 && s->n_candidates[i][cand_j] > 1) error = sudo_set_value(s, i, cand_j, n);
+    if (cand_count == 0 || error == SUDO_ERR)  return(SUDO_ERR);
   }
 
-  // check each col
-  for (j = 0; j < SUDO_SIZE; j++) {
-    for (n = 1; n <= SUDO_SIZE; n++) {
-      cand_count=0;
-      for (i = 0; i < SUDO_SIZE; i++) {
-        if (IS_BIT_SET(s->array[i][j], n)) {
-          cand_count++;
-          cand_i = i;
-        }
-        if (cand_count > 1) break;
+  // check col
+  for (n = 1; n <= SUDO_SIZE; n++) {
+    cand_count=0;
+    for (ii = 0; ii < SUDO_SIZE; ii++) {
+      if (IS_BIT_SET(s->array[ii][j], n)) {
+        cand_count++;
+        cand_i = ii;
       }
-      if (cand_count == 1 && s->n_candidates[cand_i][j] > 1) {
-        if (SUDO_ERR == sudo_set_value(s, cand_i, j, n)) return SUDO_ERR;
-      }
+      if (cand_count > 1) break;
     }
+    if (cand_count == 1 && s->n_candidates[cand_i][j] > 1) error = sudo_set_value(s, cand_i, j, n);
+    if (cand_count == 0 || error == SUDO_ERR)  return(SUDO_ERR);
   }
 
-  // check each sub3x3
-  for (sub3x3 = 0; sub3x3 < 9; sub3x3++) {
-    sub_i = sub3x3 / 3;
-    sub_j = sub3x3 - sub_i * 3;
-    sub_i *= 3;
-    sub_j *= 3;
-    for (n = 1; n <= SUDO_SIZE; n++) {
-      cand_count=0;
-      for (i = sub_i; i < sub_i + 3; i++) {
-        if (IS_BIT_SET(s->array[i][sub_j+0], n)) {
-          cand_count++;
-          cand_i = i;
-          cand_j = sub_j;
-        }
-        if (IS_BIT_SET(s->array[i][sub_j+1], n)) {
-          cand_count++;
-          cand_i = i;
-          cand_j = sub_j + 1;
-        }
-        if (IS_BIT_SET(s->array[i][sub_j+2], n)) {
-          cand_count++;
-          cand_i = i;
-          cand_j = sub_j + 2;
-        }
-        if (cand_count > 1) break;
+  // check sub3x3
+  sub_i = (i / 3) * 3;
+  sub_j = (j / 3) * 3;
+  for (n = 1; n <= SUDO_SIZE; n++) {
+    cand_count=0;
+    for (ii = sub_i; ii < sub_i + 3; ii++) {
+      if (IS_BIT_SET(s->array[ii][sub_j+0], n)) {
+        cand_count++;
+        cand_i = ii;
+        cand_j = sub_j;
       }
-      // After all 9 elements have been scanned to given value n.
-      if (cand_count == 1 && s->n_candidates[cand_i][cand_j] > 1) {
-        if (SUDO_ERR == sudo_set_value(s, cand_i, cand_j, n)) return SUDO_ERR;
+      if (IS_BIT_SET(s->array[ii][sub_j+1], n)) {
+        cand_count++;
+        cand_i = ii;
+        cand_j = sub_j + 1;
       }
+      if (IS_BIT_SET(s->array[ii][sub_j+2], n)) {
+        cand_count++;
+        cand_i = ii;
+        cand_j = sub_j + 2;
+      }
+      if (cand_count > 1) break;
     }
+    // After all 9 elements have been scanned to given value n.
+    if (cand_count == 1 && s->n_candidates[cand_i][cand_j] > 1) error = sudo_set_value(s, cand_i, cand_j, n);
+    if (cand_count == 0 || error == SUDO_ERR)  return(SUDO_ERR);
   }
-  return SUDO_OK;
+
+  return(SUDO_OK);
 }
 
 int main(int argc, char **argv) {
@@ -344,9 +337,9 @@ int main(int argc, char **argv) {
   sudo_print(s);
 
   /* Getting here means speculation is needed now. */
-  while (s->unknown) {
-    sudo_check_unique_cand(s);
-  }
+//  while (s->unknown) {
+//    sudo_check_unique_cand(s);
+//  }
 
   sudo_free(s);
 }

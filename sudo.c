@@ -73,6 +73,12 @@ sudo *sudo_create() {
   return(s);
 }
 
+sudo *sudo_copy(sudo *src) {
+  sudo *s=malloc(sizeof(sudo));
+  if (s != NULL)  memcpy(s, src, sizeof(sudo));
+  return(s);
+}
+
 void sudo_free(sudo *s) {
   if (s) free(s);
 }
@@ -313,6 +319,54 @@ int sudo_check_unique_cand(sudo *s, int i, int j) {
   return(SUDO_OK);
 }
 
+int sudo_speculate(sudo *s) {
+  int i, j, n;
+  int cand_i, cand_j, cand_n, cand_min;
+  int error = SUDO_OK;
+  sudo *snapshot = sudo_copy(s);
+
+  if (s->unknown == 0) return SUDO_OK;
+
+  while (s->unknown) {
+    cand_min = SUDO_SIZE;
+    cand_n = 1;
+    /* Find an element with fewest candidates. */
+    for (i = 0; i < SUDO_SIZE; i++)
+      for (j = 0; j < SUDO_SIZE; j++) {
+	if (s->n_candidates[i][j] > 1 && s->n_candidates[i][j] < cand_min) {
+	  cand_min = s->n_candidates[i][j];
+	  cand_i = i;
+	  cand_j = j;
+	}
+      }
+    for (n = 1; n < SUDO_SIZE; n++) {
+      if (IS_BIT_SET(s->n_candidates[cand_i][cand_j], n)) {
+	error == sudo_set_value(s, cand_i, cand_j, n);
+	if (error == SUDO_ERR) {
+	  /* Bad luck. Speculate error. */
+	  /* [cand_i, cand_j] cannot be value n. Remove it from candidate bitmap. */
+	  /* Restore snapshot. */
+	  memcpy(s, snapshot, sizeof(sudo));
+	  CLEAR_BIT_PTR(&s->array[cand_i][cand_j], n);
+	  s->n_candidates[cand_i][cand_j]--;
+	  //error = sudo_check_unique_cand(s, cand_i, cand_j);
+	}
+	else {
+	  if (s->unknown == 0) {
+	    sudo_free(snapshot);
+	    return(SUDO_OK);
+	  }
+	  else error = sudo_speculate(s);
+	}
+	if (SUDO_ERR == error) {
+	  sudo_free(snapshot);
+	  return(error);
+	}
+      }
+    }
+  }
+}
+
 int main(int argc, char **argv) {
   FILE *fp;
   sudo *s;
@@ -337,6 +391,7 @@ int main(int argc, char **argv) {
   sudo_print(s);
 
   /* Getting here means speculation is needed now. */
+  sudo_speculate(s);
 //  while (s->unknown) {
 //    sudo_check_unique_cand(s);
 //  }

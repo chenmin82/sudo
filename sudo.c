@@ -11,7 +11,7 @@
 typedef struct {
   int array[SUDO_SIZE][SUDO_SIZE];
   int n_candidates[SUDO_SIZE][SUDO_SIZE];
-  int unknown;	/* undertermined elments */
+  int unknown;  /* undertermined elments */
 } sudo;
 
 typedef struct sudo_snapshot {
@@ -333,35 +333,33 @@ int sudo_speculate(sudo *s) {
     /* Find an element with fewest candidates. */
     for (i = 0; i < SUDO_SIZE; i++)
       for (j = 0; j < SUDO_SIZE; j++) {
-	if (s->n_candidates[i][j] > 1 && s->n_candidates[i][j] < cand_min) {
-	  cand_min = s->n_candidates[i][j];
-	  cand_i = i;
-	  cand_j = j;
-	}
+        if (s->n_candidates[i][j] > 1 && s->n_candidates[i][j] < cand_min) {
+          cand_min = s->n_candidates[i][j];
+          cand_i = i;
+          cand_j = j;
+        }
       }
     for (n = 1; n < SUDO_SIZE; n++) {
-      if (IS_BIT_SET(s->n_candidates[cand_i][cand_j], n)) {
-	error == sudo_set_value(s, cand_i, cand_j, n);
-	if (error == SUDO_ERR) {
-	  /* Bad luck. Speculate error. */
-	  /* [cand_i, cand_j] cannot be value n. Remove it from candidate bitmap. */
-	  /* Restore snapshot. */
-	  memcpy(s, snapshot, sizeof(sudo));
-	  CLEAR_BIT_PTR(&s->array[cand_i][cand_j], n);
-	  s->n_candidates[cand_i][cand_j]--;
-	  //error = sudo_check_unique_cand(s, cand_i, cand_j);
-	}
-	else {
-	  if (s->unknown == 0) {
-	    sudo_free(snapshot);
-	    return(SUDO_OK);
-	  }
-	  else error = sudo_speculate(s);
-	}
-	if (SUDO_ERR == error) {
-	  sudo_free(snapshot);
-	  return(error);
-	}
+      if (IS_BIT_SET(s->array[cand_i][cand_j], n)) {
+        error == sudo_set_value(s, cand_i, cand_j, n);
+        if (error == SUDO_ERR) {
+          /* Bad luck. Speculate error. */
+          /* [cand_i, cand_j] cannot be value n. Remove it from candidate bitmap. */
+          /* Restore snapshot. */
+          memcpy(s, snapshot, sizeof(sudo));
+          CLEAR_BIT_PTR(&s->array[cand_i][cand_j], n);
+          s->n_candidates[cand_i][cand_j]--;
+          //error = sudo_check_unique_cand(s, cand_i, cand_j);
+        } else {
+          if (s->unknown == 0) {
+            sudo_free(snapshot);
+            return(SUDO_OK);
+          } else error = sudo_speculate(s);
+        }
+        if (SUDO_ERR == error) {
+          sudo_free(snapshot);
+          return(error);
+        }
       }
     }
   }

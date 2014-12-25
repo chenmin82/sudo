@@ -92,10 +92,12 @@ int sudo_clear_col(sudo *s, int i, int j, int value, int *cand) {
   for (ii = 0; ii < SUDO_SIZE; ii++) {
     if (ii != i && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
-      if (s->n_candidates[ii][j] == 2)
+      s->n_candidates[ii][j]--;
+      if (s->n_candidates[ii][j] == 0) return(SUDO_ERR);
+      else if (s->n_candidates[ii][j] == 1) {
         SET_BIT_PTR(&new_cand, ii+1);
-      else s->n_candidates[ii][j]--;
-      if (s->n_candidates[ii][j] == 0) error = SUDO_ERR;
+        s->unknown--;
+      }
     }
     p += SUDO_SIZE;
   }
@@ -111,10 +113,12 @@ int sudo_clear_row(sudo *s, int i, int j, int value, int *cand) {
   for (jj = 0; jj < SUDO_SIZE; jj++) {
     if (jj != j && IS_BIT_SET_PTR(p, value)) {
       CLEAR_BIT_PTR(p, value);
-      if (s->n_candidates[i][jj] == 2)
+      s->n_candidates[i][jj]--;
+      if (s->n_candidates[i][jj] == 0) return(SUDO_ERR);
+      else if (s->n_candidates[i][jj] == 1) {
         SET_BIT_PTR(&new_cand, jj+1);
-      else s->n_candidates[i][jj]--;
-      if (s->n_candidates[i][jj] == 0) error = SUDO_ERR;
+        s->unknown--;
+      }
     }
     p++;
   }
@@ -134,10 +138,12 @@ int sudo_clear_sub_3x3(sudo *s, int i, int j, int value, int *cand) {
     for (jj = sub_j; jj < sub_j + 3; jj++) {
       if (ii != i && jj != j && IS_BIT_SET_PTR(p, value)) {
         CLEAR_BIT_PTR(p, value);
-        if (s->n_candidates[ii][jj] == 2)
+        s->n_candidates[ii][jj]--;
+        if (s->n_candidates[ii][jj] == 0) return(SUDO_ERR);
+        else if (s->n_candidates[ii][jj] == 1) {
           SET_BIT_PTR(&new_cand, (ii-sub_i)*3+(jj-sub_j)+1);
-        else s->n_candidates[ii][jj]--;
-        if (s->n_candidates[ii][jj] == 0) error = SUDO_ERR;
+          s->unknown--;
+        }
       }
       p++;
     }
@@ -159,15 +165,17 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
 //  assert(s->n_candidates[i][j]);
 //  assert(IS_BIT_SET_PTR(p, value));
   if (!IS_BIT_SET_PTR(p, value)) return SUDO_ERR;
-
-  *p = 0;
-  SET_BIT_PTR(p, value);
-  if (s->n_candidates[i][j] != 1) s->unknown--;
-  s->n_candidates[i][j]=1;
+  if (s->n_candidates[i][j] != 1) {
+    *p = 0;
+    SET_BIT_PTR(p, value);
+    if (s->n_candidates[i][j] != 1) s->unknown--;
+    s->n_candidates[i][j]=1;
+  }
 
   printf("Adding %d @ (%d, %d), %d left.\n", value, i, j, s->unknown);
   printf("sudo after adding %d at (%d, %d)\n", value, i, j);
   sudo_print(s);
+
   error = sudo_clear_row(s, i, j, value, &new_cand_in_row);
   if (error != SUDO_OK) return error;
 //  printf("sudo after clearing row: %d at (%d, %d)\n", value, i, j);
@@ -213,7 +221,8 @@ int sudo_set_value(sudo *s, int i, int j, int value) {
     }
   }
 
-  return(sudo_check_unique_cand(s, i, j));
+  error = sudo_check_unique_cand(s, i, j);
+  return(error);
 }
 
 int sudo_init_from_file(sudo *s, FILE *fp) {
@@ -323,11 +332,12 @@ int sudo_speculate(sudo *s) {
   int i, j, n;
   int cand_i, cand_j, cand_n, cand_min;
   int error = SUDO_OK;
-  sudo *snapshot = sudo_copy(s);
+  sudo *snapshot = NULL;
 
   if (s->unknown == 0) return SUDO_OK;
 
   while (s->unknown) {
+    snapshot = sudo_copy(s);
     cand_min = SUDO_SIZE;
     cand_n = 1;
     /* Find an element with fewest candidates. */
@@ -341,7 +351,8 @@ int sudo_speculate(sudo *s) {
       }
     for (n = 1; n < SUDO_SIZE; n++) {
       if (IS_BIT_SET(s->array[cand_i][cand_j], n)) {
-        error == sudo_set_value(s, cand_i, cand_j, n);
+        printf("Speculating (%d, %d) -> %d\n", cand_i, cand_j, n);
+        error = sudo_set_value(s, cand_i, cand_j, n);
         if (error == SUDO_ERR) {
           /* Bad luck. Speculate error. */
           /* [cand_i, cand_j] cannot be value n. Remove it from candidate bitmap. */
@@ -349,17 +360,25 @@ int sudo_speculate(sudo *s) {
           memcpy(s, snapshot, sizeof(sudo));
           CLEAR_BIT_PTR(&s->array[cand_i][cand_j], n);
           s->n_candidates[cand_i][cand_j]--;
-          //error = sudo_check_unique_cand(s, cand_i, cand_j);
+          printf("Speculating (%d, %d) -> %d\n ERROR! Restore... %d left\n", cand_i, cand_j, n, s->unknown);
         } else {
           if (s->unknown == 0) {
             sudo_free(snapshot);
             return(SUDO_OK);
-          } else error = sudo_speculate(s);
+          } else {
+            error = sudo_speculate(s);
+            if (SUDO_ERR == error) {
+              sudo_free(snapshot);
+              return(error);
+            }
+          }
         }
+        /*
         if (SUDO_ERR == error) {
           sudo_free(snapshot);
           return(error);
         }
+        */
       }
     }
   }
@@ -386,13 +405,15 @@ int main(int argc, char **argv) {
      return(3);
   }
 
+  printf("\n\nResult of adding only candidates:\n");
   sudo_print(s);
+  printf("\n\n");
 
   /* Getting here means speculation is needed now. */
   sudo_speculate(s);
-//  while (s->unknown) {
-//    sudo_check_unique_cand(s);
-//  }
+
+  sudo_print(s);
+  printf("\n\nSUDO calculation %s, %d left\n", s->unknown ? "FAIL" : "OK", s->unknown);
 
   sudo_free(s);
 }

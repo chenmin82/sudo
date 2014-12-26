@@ -349,7 +349,7 @@ int sudo_speculate(sudo *s) {
           cand_j = j;
         }
       }
-    for (n = 1; n < SUDO_SIZE; n++) {
+    for (n = 1; n <= SUDO_SIZE; n++) {
       if (IS_BIT_SET(s->array[cand_i][cand_j], n)) {
         printf("Speculating (%d, %d) -> %d\n", cand_i, cand_j, n);
         error = sudo_set_value(s, cand_i, cand_j, n);
@@ -357,10 +357,16 @@ int sudo_speculate(sudo *s) {
           /* Bad luck. Speculate error. */
           /* [cand_i, cand_j] cannot be value n. Remove it from candidate bitmap. */
           /* Restore snapshot. */
+          CLEAR_BIT_PTR(&snapshot->array[cand_i][cand_j], n);
+          snapshot->n_candidates[cand_i][cand_j]--;
+          if (snapshot->n_candidates[cand_i][cand_j] == 1) snapshot->unknown--;
           memcpy(s, snapshot, sizeof(sudo));
-          CLEAR_BIT_PTR(&s->array[cand_i][cand_j], n);
-          s->n_candidates[cand_i][cand_j]--;
-          printf("Speculating (%d, %d) -> %d\n ERROR! Restore... %d left\n", cand_i, cand_j, n, s->unknown);
+          printf("Speculating (%d, %d) -> %d ERROR! Restore... %d left\n", cand_i, cand_j, n, s->unknown);
+          sudo_print(s);
+          if (s->n_candidates[cand_i][cand_j] == 0) {
+            sudo_free(snapshot);
+            return SUDO_ERR;
+          }
         } else {
           if (s->unknown == 0) {
             sudo_free(snapshot);
@@ -368,8 +374,15 @@ int sudo_speculate(sudo *s) {
           } else {
             error = sudo_speculate(s);
             if (SUDO_ERR == error) {
-              sudo_free(snapshot);
-              return(error);
+              CLEAR_BIT_PTR(&snapshot->array[cand_i][cand_j], n);
+              snapshot->n_candidates[cand_i][cand_j]--;
+              if (snapshot->n_candidates[cand_i][cand_j] == 1) snapshot->unknown--;
+              memcpy(s, snapshot, sizeof(sudo));
+              printf("Speculating (%d, %d) -> %d ERROR! Restore... %d left\n", cand_i, cand_j, n, s->unknown);
+              if (s->n_candidates[cand_i][cand_j] == 0) {
+                sudo_free(snapshot);
+                return(error);
+              }
             }
           }
         }

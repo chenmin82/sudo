@@ -418,15 +418,16 @@ int main(int argc, char **argv) {
      return(3);
   }
 
-  printf("\n\nResult of adding only candidates:\n");
+  printf("\n\nResult of adding only candidates (%d left):\n", s->unknown);
   sudo_print(s);
   printf("\n\n");
 
   /* Getting here means speculation is needed now. */
   sudo_speculate(s);
 
+
+  printf("\n\nSUDO calculation %s, %d left. Answer is: \n\n", s->unknown ? "FAIL" : "OK", s->unknown);
   sudo_print(s);
-  printf("\n\nSUDO calculation %s, %d left\n", s->unknown ? "FAIL" : "OK", s->unknown);
 
   sudo_free(s);
 }

@@ -229,7 +229,42 @@ int sudo_init_from_file(sudo *s, FILE *fp) {
   char line[64];
   int i, j;
   i = 0;
-  char *p;
+  char *p, ch;
+
+  /* read from stdin */
+  if (fp == NULL) {
+    int reset = 0;
+    do {
+      for (i = 0; i < SUDO_SIZE; i++) {
+        for (j = 0; j < SUDO_SIZE; j++) {
+          do {
+            printf("Input element at (%d, %d) [ '1' - '9', RET if not determined, 'R' to reset ]: ", i, j);
+            ch = getchar();
+            if (ch != '\n') {
+              /* ignore all other characters */
+              while (getchar() != '\n');
+            }
+            if (ch == 'R' || ch == 'r') {
+              reset = 1;
+              goto SUDO_RESET;
+            }
+            if (ch == '\n') break;
+            if (ch < '1' || ch > '9') {
+              printf("Invalid [%c]\n", ch);
+              ch = '0';
+            } else sudo_set_value(s, i, j, ch - '0');
+          } while (ch == '0');
+        }
+      }
+    SUDO_RESET:
+      if (reset) {
+        i = 0; j = 0;
+        sudo_init(s);
+      }
+    } while (reset);
+    return (0);
+  }
+
   while (fgets(line, 64, fp)) {
     j = 0;
     p = line;
@@ -398,18 +433,20 @@ int sudo_speculate(sudo *s) {
 }
 
 int main(int argc, char **argv) {
-  FILE *fp;
+  FILE *fp = NULL;
   sudo *s;
 
-  if (argc != 2) {
-    printf("Usage: %s sudo_file\n",  argv[0]);
-    return(1);
+  if (argc == 1) {
+    printf("Usage: %s [sudo_file]\n",  argv[0]);
+    printf("No input file, reading sudoku from stdin.\n");
   }
 
-  fp = fopen(argv[1], "r");
-  if (!fp) {
-    printf("File %s cannot be opened.\n", argv[1]);
-    return(2);
+  if (argc > 1) {
+    fp = fopen(argv[1], "r");
+    if (!fp) {
+      printf("File %s cannot be opened.\n", argv[1]);
+      return(2);
+    }
   }
 
   s = sudo_create();
@@ -424,7 +461,6 @@ int main(int argc, char **argv) {
 
   /* Getting here means speculation is needed now. */
   sudo_speculate(s);
-
 
   printf("\n\nSUDO calculation %s, %d left. Answer is: \n\n", s->unknown ? "FAIL" : "OK", s->unknown);
   sudo_print(s);

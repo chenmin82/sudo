@@ -233,8 +233,9 @@ int sudo_init_from_file(sudo *s, FILE *fp) {
 
   /* read from stdin */
   if (fp == NULL) {
-    int reset = 0;
+    int reset;
     do {
+      reset = 0;
       for (i = 0; i < SUDO_SIZE; i++) {
         for (j = 0; j < SUDO_SIZE; j++) {
           do {
